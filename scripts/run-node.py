@@ -4,6 +4,10 @@ import subprocess
 import sys
 import os
 import re
+import requests
+import json
+import zipfile
+from io import BytesIO
 
 def check_and_prompt_package_installation():
     try:
@@ -13,12 +17,6 @@ def check_and_prompt_package_installation():
         print("Please install it using your system's package manager. For example:")
         print("sudo apt install python3-requests")
         sys.exit(1)
-
-# Now explicitly import after ensuring installation
-import requests
-import json
-import zipfile
-from io import BytesIO
 
 ENV_TO_CHAIN_ID = {
     "local": None,
@@ -84,7 +82,6 @@ def download_and_unzip(url):
     except zipfile.BadZipFile:
         print("Downloaded file is not a zip file.")
         sys.exit(1)
-
 def get_rpc_server(chain_id):
     chains_json_url = "https://raw.githubusercontent.com/sei-protocol/chain-registry/main/chains.json"
     response = requests.get(chains_json_url)
@@ -184,6 +181,7 @@ def main():
     persistent_peers = get_persistent_peers(rpc_url)
     genesis_file = get_genesis_file(chain_id)
 
+    # Config file handling
     config_path = os.path.expanduser('~/.sei/config/config.toml')
     app_config_path = os.path.expanduser('~/.sei/config/app.toml')
     genesis_path = os.path.join(os.path.dirname(config_path), 'genesis.json')
@@ -195,6 +193,7 @@ def main():
     with open(app_config_path, 'r') as file:
         app_config_data = file.read()
 
+    # Config.toml edits
     config_data = config_data.replace('rpc-servers = ""', f'rpc-servers = "{rpc_url},{rpc_url}"')
     config_data = config_data.replace('trust-height = 0', f'trust-height = {sync_block_height}')
     config_data = config_data.replace('trust-hash = ""', f'trust-hash = "{sync_block_hash}"')
@@ -205,15 +204,20 @@ def main():
     with open(config_path, 'w') as file:
         file.write(config_data)
 
+    # App.toml edits for 'sc-enable' and 'enabled' under specific conditions
     if db_choice == "1":
         app_config_data = re.sub(
             r"(sc-enable = ).*",
             r"\1true",
             app_config_data
         )
-        with open(app_config_path, 'w') as file:
-            file.write(app_config_data)
-
+    app_config_data = re.sub(
+        r"(# other sinks such as Prometheus.\nenabled = ).*",
+        r"\1false",
+        app_config_data
+    )
+    with open(app_config_path, 'w') as file:
+        file.write(app_config_data)
 
     print("Starting seid...")
     run_command("seid start")
