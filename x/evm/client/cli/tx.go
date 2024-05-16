@@ -11,8 +11,9 @@ import (
 	"math/big"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
+
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -62,7 +63,8 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(CmdERC20Send())
 	cmd.AddCommand(CmdCallPrecompile())
 	cmd.AddCommand(NativeSendTxCmd())
-	cmd.AddCommand(NativeRegisterPointerCmd())
+	cmd.AddCommand(RegisterCwPointerCmd())
+	cmd.AddCommand(RegisterEvmPointerCmd())
 	cmd.AddCommand(NewAddERCNativePointerProposalTxCmd())
 	cmd.AddCommand(NewAddERCCW20PointerProposalTxCmd())
 	cmd.AddCommand(NewAddERCCW721PointerProposalTxCmd())
@@ -94,6 +96,9 @@ func CmdAssociateAddress() *cobra.Command {
 				localInfo, ok := info.(keyring.LocalInfo)
 				if !ok {
 					return errors.New("can only associate address for local keys")
+				}
+				if localInfo.GetAlgo() != hd.Secp256k1Type {
+					return errors.New("can only use addresses using secp256k1")
 				}
 				priv, err := legacy.PrivKeyFromBytes([]byte(localInfo.PrivKeyArmor))
 				if err != nil {
@@ -369,15 +374,15 @@ func CmdERC20Send() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			contract := common.HexToAddress(args[0])
 			recipient := common.HexToAddress(args[1])
-			amt, err := strconv.ParseUint(args[2], 10, 64)
-			if err != nil {
-				return err
+			amt, ok := new(big.Int).SetString(args[2], 10)
+			if !ok {
+				return fmt.Errorf("unable to parse amount: %s", args[2])
 			}
 			abi, err := native.NativeMetaData.GetAbi()
 			if err != nil {
 				return err
 			}
-			payload, err := abi.Pack("transfer", recipient, new(big.Int).SetUint64(amt))
+			payload, err := abi.Pack("transfer", recipient, amt)
 			if err != nil {
 				return err
 			}
@@ -584,6 +589,9 @@ func getPrivateKey(cmd *cobra.Command) (*ecdsa.PrivateKey, error) {
 	localInfo, ok := info.(keyring.LocalInfo)
 	if !ok {
 		return nil, errors.New("can only associate address for local keys")
+	}
+	if localInfo.GetAlgo() != hd.Secp256k1Type {
+		return nil, errors.New("can only use addresses using secp256k1")
 	}
 	priv, err := legacy.PrivKeyFromBytes([]byte(localInfo.PrivKeyArmor))
 	if err != nil {

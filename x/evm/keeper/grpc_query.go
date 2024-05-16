@@ -7,7 +7,11 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sei-protocol/sei-chain/utils"
+	"github.com/sei-protocol/sei-chain/x/evm/artifacts/cw20"
+	"github.com/sei-protocol/sei-chain/x/evm/artifacts/cw721"
+	"github.com/sei-protocol/sei-chain/x/evm/artifacts/erc20"
+	"github.com/sei-protocol/sei-chain/x/evm/artifacts/erc721"
+	"github.com/sei-protocol/sei-chain/x/evm/artifacts/native"
 	"github.com/sei-protocol/sei-chain/x/evm/types"
 )
 
@@ -60,7 +64,7 @@ func (q Querier) StaticCall(c context.Context, req *types.QueryStaticCallRequest
 		return nil, errors.New("cannot use static call to create contracts")
 	}
 	if ctx.GasMeter().Limit() == 0 {
-		ctx = ctx.WithGasMeter(utils.NewGasMeterWithMultiplier(ctx, q.QueryConfig.GasLimit))
+		ctx = ctx.WithGasMeter(sdk.NewGasMeterWithMultiplier(ctx, q.QueryConfig.GasLimit))
 	}
 	to := common.HexToAddress(req.To)
 	res, err := q.Keeper.StaticCallEVM(ctx, q.Keeper.AccountKeeper().GetModuleAddress(types.ModuleName), &to, req.Data)
@@ -107,6 +111,36 @@ func (q Querier) Pointer(c context.Context, req *types.QueryPointerRequest) (*ty
 			Pointer: p.String(),
 			Version: uint32(v),
 			Exists:  e,
+		}, nil
+	default:
+		return nil, errors.ErrUnsupported
+	}
+}
+
+func (q Querier) PointerVersion(c context.Context, req *types.QueryPointerVersionRequest) (*types.QueryPointerVersionResponse, error) {
+	ctx := sdk.UnwrapSDKContext(c)
+	switch req.PointerType {
+	case types.PointerType_NATIVE:
+		return &types.QueryPointerVersionResponse{
+			Version: uint32(native.CurrentVersion),
+		}, nil
+	case types.PointerType_CW20:
+		return &types.QueryPointerVersionResponse{
+			Version: uint32(cw20.CurrentVersion(ctx)),
+		}, nil
+	case types.PointerType_CW721:
+		return &types.QueryPointerVersionResponse{
+			Version: uint32(cw721.CurrentVersion),
+		}, nil
+	case types.PointerType_ERC20:
+		return &types.QueryPointerVersionResponse{
+			Version:  uint32(erc20.CurrentVersion),
+			CwCodeId: q.GetStoredPointerCodeID(ctx, types.PointerType_ERC20),
+		}, nil
+	case types.PointerType_ERC721:
+		return &types.QueryPointerVersionResponse{
+			Version:  uint32(erc721.CurrentVersion),
+			CwCodeId: q.GetStoredPointerCodeID(ctx, types.PointerType_ERC721),
 		}, nil
 	default:
 		return nil, errors.ErrUnsupported
